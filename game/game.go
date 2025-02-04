@@ -15,21 +15,33 @@ const (
 	ScreenHeight = 600
 	PlayerSize   = 20
 	PlayerSpeed  = 2
-	LineLength   = 15 // Length of the direction indicator
+	LineLength   = 15  // Length of direction indicator
+	BulletSize   = 5   // Bullet dimensions
+	BulletSpeed  = 4   // Bullet movement speed
+	ShotCooldown = 20  // Frames between shots
 )
 
 // Player struct
 type Player struct {
 	x, y   float64
-	angle  float64 // Player's facing angle
+	angle  float64
+	cooldown int // Frames left until next shot
+}
+
+// Bullet struct
+type Bullet struct {
+	x, y   float64
+	vx, vy float64
+	active bool
 }
 
 // Game struct
 type Game struct {
-	player Player
+	player  Player
+	bullets []Bullet
 }
 
-// Update handles movement & direction
+// Update handles movement & shooting
 func (g *Game) Update() error {
 	vx, vy := 0.0, 0.0 // Velocity
 
@@ -66,10 +78,38 @@ func (g *Game) Update() error {
 
 	// Update facing angle if moving
 	if vx != 0 || vy != 0 {
-		g.player.angle = math.Atan2(vy, vx) // Calculate angle
+		g.player.angle = math.Atan2(vy, vx)
+	}
+
+	// Shooting Mechanism
+	if g.player.cooldown > 0 {
+		g.player.cooldown--
+	}
+	if ebiten.IsKeyPressed(ebiten.KeySpace) && g.player.cooldown == 0 {
+		g.shootBullet()
+		g.player.cooldown = ShotCooldown
+	}
+
+	// Update bullets
+	for i := range g.bullets {
+		if g.bullets[i].active {
+			g.bullets[i].x += g.bullets[i].vx
+			g.bullets[i].y += g.bullets[i].vy
+			// Deactivate bullet if off-screen
+			if g.bullets[i].x < 0 || g.bullets[i].x > ScreenWidth || g.bullets[i].y < 0 || g.bullets[i].y > ScreenHeight {
+				g.bullets[i].active = false
+			}
+		}
 	}
 
 	return nil
+}
+
+// Shoot a bullet
+func (g *Game) shootBullet() {
+	vx := BulletSpeed * math.Cos(g.player.angle)
+	vy := BulletSpeed * math.Sin(g.player.angle)
+	g.bullets = append(g.bullets, Bullet{x: g.player.x + PlayerSize/2, y: g.player.y + PlayerSize/2, vx: vx, vy: vy, active: true})
 }
 
 // Draw renders everything
@@ -77,16 +117,19 @@ func (g *Game) Draw(screen *ebiten.Image) {
 	// Draw the player
 	ebitenutil.DrawRect(screen, g.player.x, g.player.y, PlayerSize, PlayerSize, color.White)
 
-	// Calculate the center of the player
+	// Draw facing direction
 	centerX := g.player.x + PlayerSize/2
 	centerY := g.player.y + PlayerSize/2
-
-	// Calculate the end point of the red line
 	endX := centerX + math.Cos(g.player.angle)*LineLength
 	endY := centerY + math.Sin(g.player.angle)*LineLength
-
-	// Draw the direction indicator from the center
 	ebitenutil.DrawLine(screen, centerX, centerY, endX, endY, color.RGBA{255, 0, 0, 255})
+
+	// Draw bullets
+	for _, b := range g.bullets {
+		if b.active {
+			ebitenutil.DrawRect(screen, b.x, b.y, BulletSize, BulletSize, color.RGBA{255, 255, 0, 255})
+		}
+	}
 }
 
 // Layout defines the screen size
@@ -95,7 +138,6 @@ func (g *Game) Layout(outsideWidth, outsideHeight int) (int, int) {
 }
 
 func main() {
-	// Initialize game with player at the center
 	game := &Game{
 		player: Player{x: ScreenWidth/2 - PlayerSize/2, y: ScreenHeight/2 - PlayerSize/2},
 	}
