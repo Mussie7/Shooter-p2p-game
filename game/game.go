@@ -1,10 +1,12 @@
 package main
 
 import (
+	"image/color"
+	"log"
+	"math"
+
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/ebitenutil"
-	"log"
-	"image/color"
 )
 
 // Screen & player properties
@@ -13,11 +15,13 @@ const (
 	ScreenHeight = 600
 	PlayerSize   = 20
 	PlayerSpeed  = 2
+	LineLength   = 15 // Length of the direction indicator
 )
 
 // Player struct
 type Player struct {
-	x, y float64
+	x, y   float64
+	angle  float64 // Player's facing angle
 }
 
 // Game struct
@@ -25,23 +29,28 @@ type Game struct {
 	player Player
 }
 
-// Update handles movement
+// Update handles movement & direction
 func (g *Game) Update() error {
-	// Movement logic
+	vx, vy := 0.0, 0.0 // Velocity
+
 	if ebiten.IsKeyPressed(ebiten.KeyW) {
-		g.player.y -= PlayerSpeed
+		vy -= PlayerSpeed
 	}
 	if ebiten.IsKeyPressed(ebiten.KeyS) {
-		g.player.y += PlayerSpeed
+		vy += PlayerSpeed
 	}
 	if ebiten.IsKeyPressed(ebiten.KeyA) {
-		g.player.x -= PlayerSpeed
+		vx -= PlayerSpeed
 	}
 	if ebiten.IsKeyPressed(ebiten.KeyD) {
-		g.player.x += PlayerSpeed
+		vx += PlayerSpeed
 	}
 
-	// Prevent player from moving off-screen
+	// Update position
+	g.player.x += vx
+	g.player.y += vy
+
+	// Prevent moving off-screen
 	if g.player.x < 0 {
 		g.player.x = 0
 	}
@@ -55,12 +64,29 @@ func (g *Game) Update() error {
 		g.player.y = ScreenHeight - PlayerSize
 	}
 
+	// Update facing angle if moving
+	if vx != 0 || vy != 0 {
+		g.player.angle = math.Atan2(vy, vx) // Calculate angle
+	}
+
 	return nil
 }
 
 // Draw renders everything
 func (g *Game) Draw(screen *ebiten.Image) {
+	// Draw the player
 	ebitenutil.DrawRect(screen, g.player.x, g.player.y, PlayerSize, PlayerSize, color.White)
+
+	// Calculate the center of the player
+	centerX := g.player.x + PlayerSize/2
+	centerY := g.player.y + PlayerSize/2
+
+	// Calculate the end point of the red line
+	endX := centerX + math.Cos(g.player.angle)*LineLength
+	endY := centerY + math.Sin(g.player.angle)*LineLength
+
+	// Draw the direction indicator from the center
+	ebitenutil.DrawLine(screen, centerX, centerY, endX, endY, color.RGBA{255, 0, 0, 255})
 }
 
 // Layout defines the screen size
