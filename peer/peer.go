@@ -1,177 +1,77 @@
 package main
 
 import (
-	"bufio"
 	"encoding/json"
 	"fmt"
 	"net"
 	"os"
-	"sync"
+	"time"
 )
 
-var peers = make(map[string]net.Conn)
-var mutex = &sync.Mutex{}
-
-type Message struct {
+// Request structure for discovery server
+type Request struct {
 	Type string `json:"type"`
-	Data string `json:"data"`
+	Addr string `json:"addr,omitempty"`
 }
+
+// Response structure from discovery server
+type Response struct {
+	Peers []string `json:"peers"`
+}
+
+// const discoveryServer = "localhost:5000" // Change this if hosted remotely
+const discoveryServer = "192.168.0.101:5000" // Replace with actual local IP
 
 func main() {
 	if len(os.Args) < 2 {
-		fmt.Println("Usage: go run peer.go <port> [peer addresses...]")
+		fmt.Println("Usage: go run peer.go <port>")
 		os.Exit(1)
 	}
 
 	port := os.Args[1]
-	initialPeers := os.Args[2:]
+	addr := fmt.Sprintf("localhost:%s", port)
 
-	go startServer(port)
+	// Step 1: Register with Discovery Server
+	registerWithDiscovery(addr)
 
-	for _, address := range initialPeers {
-		go connectToPeer(address)
-	}
+	// Step 2: Fetch Peers List
+	peerList := getPeers()
+	fmt.Println("Discovered Peers:", peerList)
 
-	go readUserInput()
-
-	select {} // Keep the main function running
-}
-
-func startServer(port string) {
-	listener, err := net.Listen("tcp", ":"+port)
-	if err != nil {
-		fmt.Println("Error starting server:", err)
-		os.Exit(1)
-	}
-	defer listener.Close()
-
-	fmt.Println("Listening on port", port)
-
+	// 🛠 Keep Running (Fix Deadlock)
 	for {
-		conn, err := listener.Accept()
-		if err != nil {
-			fmt.Println("Error accepting connection:", err)
-			continue
-		}
-
-		mutex.Lock()
-		peers[conn.RemoteAddr().String()] = conn
-		mutex.Unlock()
-
-		fmt.Println("Connected to", conn.RemoteAddr().String())
-
-		go handleConnection(conn)
+		time.Sleep(time.Second) // Keeps the program alive
 	}
 }
 
-func connectToPeer(address string) {
-	conn, err := net.Dial("tcp", address)
+// 📡 Register this peer with the discovery server
+func registerWithDiscovery(addr string) {
+	conn, err := net.Dial("tcp", discoveryServer)
 	if err != nil {
-		fmt.Println("Error connecting to peer:", err)
+		fmt.Println("Error connecting to discovery server:", err)
 		return
 	}
-
-	mutex.Lock()
-	peers[conn.RemoteAddr().String()] = conn
-	mutex.Unlock()
-
-	fmt.Println("Connected to peer", address)
-
-	go handleConnection(conn)
-}
-
-func handleConnection(conn net.Conn) {
 	defer conn.Close()
 
-	reader := bufio.NewReader(conn)
-	for {
-		message, err := reader.ReadString('\n')
-		if err != nil {
-			fmt.Println("Disconnected from", conn.RemoteAddr().String())
-			removePeer(conn)
-			return
-		}
+	req := Request{Type: "register", Addr: addr}
+	json.NewEncoder(conn).Encode(req)
 
-		var msg Message
-		err = json.Unmarshal([]byte(message), &msg)
-		if err != nil {
-			fmt.Println("Error decoding message:", err)
-			continue
-		}
-
-		switch msg.Type {
-		case "move":
-			fmt.Println("Player moved:", msg.Data)
-		case "chat":
-			fmt.Println("Chat message:", msg.Data)
-		// Handle other message types...
-		}
-
-		broadcastMessage(conn, message)
-	}
+	fmt.Println("Registered with discovery server as:", addr)
 }
 
-func broadcastMessage(sender net.Conn, message string) {
-	mutex.Lock()
-	defer mutex.Unlock()
-
-	for addr, peer := range peers {
-		if peer != sender {
-			_, err := peer.Write([]byte(message))
-			if err != nil {
-				fmt.Println("Error sending message to", addr)
-			}
-		}
-	}
-}
-
-func removePeer(conn net.Conn) {
-	mutex.Lock()
-	defer mutex.Unlock()
-
-	delete(peers, conn.RemoteAddr().String())
-}
-
-func sendMoveMessage(conn net.Conn, x, y int) {
-	message := Message{
-		Type: "move",
-		Data: fmt.Sprintf("x:%d,y:%d", x, y),
-	}
-	sendMessage(conn, message)
-}
-
-func sendChatMessage(data string) {
-	message := Message{
-		Type: "chat",
-		Data: data,
-	}
-	broadcastMessageToAll(message)
-}
-
-func sendMessage(conn net.Conn, message Message) {
-	data, err := json.Marshal(message)
+// 🔎 Get the list of peers from the discovery server
+func getPeers() []string {
+	conn, err := net.Dial("tcp", discoveryServer)
 	if err != nil {
-		fmt.Println("Error encoding message:", err)
-		return
+		fmt.Println("Error connecting to discovery server:", err)
+		return nil
 	}
-	conn.Write(data)
-	conn.Write([]byte("\n"))
-}
+	defer conn.Close()
 
-func broadcastMessageToAll(message Message) {
-	mutex.Lock()
-	defer mutex.Unlock()
+	req := Request{Type: "get_peers"}
+	json.NewEncoder(conn).Encode(req)
 
-	for _, peer := range peers {
-		sendMessage(peer, message)
-	}
-}
-
-func readUserInput() {
-	reader := bufio.NewReader(os.Stdin)
-	for {
-		fmt.Print("Enter message: ")
-		text, _ := reader.ReadString('\n')
-		sendChatMessage(text)
-	}
+	var res Response
+	json.NewDecoder(conn).Decode(&res)
+	return res.Peers
 }
