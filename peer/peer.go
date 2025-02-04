@@ -49,7 +49,7 @@ func main() {
 	fmt.Println("Discovered Peers:", peerList)
 
 	for _, peer := range peerList {
-		if peer != selfAddr { // ✅ Prevent self-connections
+		if peer != selfAddr { //  Prevent self-connections
 			go connectToPeer(peer)
 		}
 	}
@@ -58,7 +58,7 @@ func main() {
 	select {}
 }
 
-// 📡 Register this peer with the discovery server
+//  Register this peer with the discovery server
 func registerWithDiscovery(addr string) {
 	conn, err := net.Dial("tcp", discoveryServer)
 	if err != nil {
@@ -73,7 +73,7 @@ func registerWithDiscovery(addr string) {
 	fmt.Println("Registered with discovery server as:", addr)
 }
 
-// 🔎 Get the list of peers from the discovery server
+//  Get the list of peers from the discovery server
 func getPeers() []string {
 	conn, err := net.Dial("tcp", discoveryServer)
 	if err != nil {
@@ -88,10 +88,10 @@ func getPeers() []string {
 	var res Response
 	json.NewDecoder(conn).Decode(&res)
 
-	// 🔥 Filter out self-address before returning
+	// Filter out self-address before returning
 	filteredPeers := []string{}
 	for _, peer := range res.Peers {
-		if peer != selfAddr { // ✅ Prevent listing self
+		if peer != selfAddr { //  Prevent listing self
 			filteredPeers = append(filteredPeers, peer)
 		}
 	}
@@ -100,7 +100,7 @@ func getPeers() []string {
 }
 
 
-// 🚀 Start TCP server to listen for peer connections
+//  Start TCP server to listen for peer connections
 func startPeerServer(addr string) {
 	listener, err := net.Listen("tcp", fmt.Sprintf("0.0.0.0:%s", strings.Split(addr, ":")[1]))
 	if err != nil {
@@ -135,12 +135,12 @@ func startPeerServer(addr string) {
 	}
 }
 
-// 🔗 Connect to a discovered peer
+//  Connect to a discovered peer
 func connectToPeer(peerAddr string) {
 	mutex.Lock()
 	if _, exists := activeConnections[peerAddr]; exists {
 		mutex.Unlock()
-		return // ✅ Prevent duplicate connections
+		return //  Prevent duplicate connections
 	}
 	mutex.Unlock()
 
@@ -159,7 +159,7 @@ func connectToPeer(peerAddr string) {
 	go handlePeerCommunication(conn)
 }
 
-// 📩 Handle messages from peers
+//  Handle messages from peers
 func handlePeerCommunication(conn net.Conn) {
 	defer conn.Close()
 
