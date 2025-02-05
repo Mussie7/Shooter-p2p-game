@@ -166,50 +166,6 @@ func (g *Game) sendMovementUpdate(player *Player) {
 	}
 }
 
-// // Handle messages from peers
-// func (g *Game) handlePeerCommunication(conn net.Conn) {
-//     defer conn.Close()
-
-//     buffer := make([]byte, 1024)
-//     for {
-//         n, err := conn.Read(buffer)
-//         if err != nil {
-//             fmt.Println("Peer disconnected:", conn.RemoteAddr().String())
-//             mutex.Lock()
-//             delete(g.activeConnections, conn.RemoteAddr().String())
-//             mutex.Unlock()
-//             return
-//         }
-
-//         var message MovementMessage
-//         err = json.Unmarshal(buffer[:n], &message)
-//         if err != nil {
-//             fmt.Println("Error decoding message:", err)
-//             continue
-//         }
-
-//         // **Process movement update**
-//         if message.Type == "move" {
-//             mutex.Lock()
-//             if player, exists := g.players[message.ID]; exists {
-//                 player.x = message.X
-//                 player.y = message.Y
-//                 player.angle = message.Angle
-//             } else {
-//                 // **Create new player if not found**
-//                 g.players[message.ID] = &Player{
-//                     id:     message.ID,
-//                     x:      message.X,
-//                     y:      message.Y,
-//                     angle:  message.Angle,
-//                     health: MaxHealth,
-//                 }
-//             }
-//             mutex.Unlock()
-//         }
-//     }
-// }
-
 func (g *Game) UpdatePlayerPosition(msg MovementMessage) {
     mutex.Lock()
     defer mutex.Unlock()
@@ -328,10 +284,6 @@ func getRandomSpawn(existingPlayers map[string]*Player) (float64, float64) {
 }
 
 func (g *Game) MainGame(game *Game) {
-	// game := &Game{
-	// 	Players: make(map[string]*Player), // Initialize player map
-	// }
-
 	// Get a random spawn position
 	spawnX, spawnY := getRandomSpawn(game.Players)
 
@@ -352,33 +304,3 @@ func (g *Game) MainGame(game *Game) {
 		log.Fatal(err)
 	}
 }
-
-// func main() {
-// 	game := &Game{
-// 		Players: make(map[string]*Player), // Initialize player map
-// 	}
-
-// 	// Assign a unique local player ID
-// 	localID := "player_1" // In multiplayer, this would be dynamically assigned
-// 	game.LocalPlayerID = localID
-
-// 	// Get a random spawn position
-// 	spawnX, spawnY := game.GetRandomSpawn(game.Players)
-
-// 	// Create the local player with a unique ID and random spawn position
-// 	game.Players[localID] = &Player{
-// 		id:     localID,
-// 		x:      spawnX,
-// 		y:      spawnY,
-// 		health: MaxHealth,
-// 	}
-
-// 	// Set window properties
-// 	ebiten.SetWindowSize(ScreenWidth, ScreenHeight)
-// 	ebiten.SetWindowTitle("2D Battle Royale")
-
-// 	// Run game loop
-// 	if err := ebiten.RunGame(game); err != nil {
-// 		log.Fatal(err)
-// 	}
-// }

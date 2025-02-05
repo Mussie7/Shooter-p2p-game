@@ -35,38 +35,6 @@ var (
 
 )
 
-// func main() {
-// 	if len(os.Args) < 2 {
-// 		fmt.Println("Usage: go run peer.go <port>")
-// 		os.Exit(1)
-// 	}
-
-// 	port := os.Args[1]
-// 	selfAddr = fmt.Sprintf("192.168.0.101:%s", port) // Store self address
-
-// 	// Handle graceful shutdown
-// 	handleExit()
-
-// 	// Step 1: Register with Discovery Server
-// 	RegisterWithDiscovery(selfAddr)
-
-// 	// Step 2: Start Listening for TCP Connections
-// 	go StartPeerServer(selfAddr)
-
-// 	// Step 3: Fetch and Connect to Peers
-// 	peerList := GetPeers()
-// 	fmt.Println("Discovered Peers:", peerList)
-
-// 	for _, peer := range peerList {
-// 		if peer != selfAddr { //  Prevent self-connections
-// 			go ConnectToPeer(peer)
-// 		}
-// 	}
-
-// 	// Keep the program running
-// 	select {}
-// }
-
 //  Register this peer with the discovery server
 func RegisterWithDiscovery(addr string) {
 	conn, err := net.Dial("tcp", discoveryServer)
@@ -137,8 +105,6 @@ func GetPeers() []string {
     }
     return nil // Return empty after 3 failed attempts
 }
-
-
 
 //  Start TCP server to listen for peer connections
 func StartPeerServer(addr string) {
