@@ -24,6 +24,7 @@ func main() {
 
 	// Create the game instance
     gameInstance := &game.Game{
+		LocalPlayerID: playerAddr,
         Players: make(map[string]*game.Player),
         ActiveConnections: peer.ActiveConnections,
 		SendUpdate: peer.SendMovementUpdate, // Inject function

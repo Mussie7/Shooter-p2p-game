@@ -332,16 +332,12 @@ func (g *Game) MainGame(game *Game) {
 	// 	Players: make(map[string]*Player), // Initialize player map
 	// }
 
-	// Assign a unique local player ID
-	localID := "player_1" // In multiplayer, this would be dynamically assigned
-	game.LocalPlayerID = localID
-
 	// Get a random spawn position
 	spawnX, spawnY := getRandomSpawn(game.Players)
 
 	// Create the local player with a unique ID and random spawn position
-	game.Players[localID] = &Player{
-		id:     localID,
+	game.Players[game.LocalPlayerID] = &Player{
+		id:     game.LocalPlayerID,
 		x:      spawnX,
 		y:      spawnY,
 		health: MaxHealth,
