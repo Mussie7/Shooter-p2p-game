@@ -19,6 +19,9 @@ func main() {
     playerAddr := fmt.Sprintf("192.168.0.101:%s", port) // Update with actual LAN IP
 	peer.SelfAddr = playerAddr // Store self address in peer package
 
+	// Handle player exit properly
+	peer.HandleExit()
+
 	// Register player with the discovery server
 	peer.RegisterWithDiscovery(playerAddr)
 

@@ -66,12 +66,24 @@ func deregisterFromDiscovery() {
 }
 
 // Handle SIGINT (CTRL+C) to clean up before exit
-func handleExit() {
+func HandleExit() {
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 	go func() {
 		<-sigChan
-		deregisterFromDiscovery() // Deregister before exiting
+		fmt.Println("Shutting down...")
+
+		// Notify the discovery server
+		deregisterFromDiscovery()
+
+		// Close all active connections
+		mutex.Lock()
+		for _, conn := range ActiveConnections {
+			conn.Close()
+		}
+		ActiveConnections = make(map[string]net.Conn) // Clear connections
+		mutex.Unlock()
+
 		os.Exit(0)
 	}()
 }
@@ -168,14 +180,22 @@ func ConnectToPeer(peerAddr string) {
 func handlePeerCommunication(conn net.Conn) {
     defer conn.Close()
 
+	peerAddr := conn.RemoteAddr().String()
     buffer := make([]byte, 1024)
     for {
         n, err := conn.Read(buffer)
         if err != nil {
-            fmt.Println("Peer disconnected:", conn.RemoteAddr().String())
+            fmt.Println("Peer disconnected:", peerAddr)
+
+			// Remove the peer from active connections
             mutex.Lock()
-            delete(ActiveConnections, conn.RemoteAddr().String())
+            delete(ActiveConnections, peerAddr)
             mutex.Unlock()
+
+			// Notify the game to remove the player
+			if GameInstance != nil {
+				GameInstance.RemovePlayerAfterDelay(peerAddr)
+			}
             return
         }
 

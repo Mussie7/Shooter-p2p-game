@@ -212,14 +212,14 @@ func checkCollision(b Bullet, p *Player, g *Game) bool {
 		if p.health <= 0 && !p.eliminated {
 			fmt.Println("Player", p.id, "eliminated!")
 			p.eliminated = true // Mark as eliminated
-			go g.removePlayerAfterDelay(p.id) // Remove after delay
+			go g.RemovePlayerAfterDelay(p.id) // Remove after delay
 		}
 		return true
 	}
 	return false
 }
 
-func (g *Game) removePlayerAfterDelay(playerID string) {
+func (g *Game) RemovePlayerAfterDelay(playerID string) {
 	time.Sleep(3 * time.Second) // Wait 3 seconds before removal
 
 	mutex.Lock()
