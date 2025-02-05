@@ -27,7 +27,7 @@ func main() {
 		LocalPlayerID: playerAddr,
         Players: make(map[string]*game.Player),
         ActiveConnections: peer.ActiveConnections,
-		SendUpdate: peer.SendMovementUpdate, // Inject function
+		SendUpdate: peer.SendUpdate, // Inject function
 
     }
 	// Set game instance in peer package

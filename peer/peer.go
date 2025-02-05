@@ -179,33 +179,51 @@ func handlePeerCommunication(conn net.Conn) {
             return
         }
 
-        var message game.MovementMessage
+        var message map[string]interface{}
         err = json.Unmarshal(buffer[:n], &message)
         if err != nil {
             fmt.Println("Error decoding message:", err)
             continue
         }
 
-		// **Update game state with received movement**
-        if message.Type == "move" && GameInstance != nil {
-            GameInstance.UpdatePlayerPosition(message)
+        messageType, ok := message["type"].(string)
+        if !ok {
+            continue
+        }
+
+        // Handle movement updates
+        if messageType == "move" {
+            var moveMsg game.MovementMessage
+            json.Unmarshal(buffer[:n], &moveMsg)
+            if GameInstance != nil {
+                GameInstance.UpdatePlayerPosition(moveMsg)
+            }
+        }
+
+        // Handle shooting updates
+        if messageType == "bullet" {
+            var bulletMsg game.BulletMessage
+            json.Unmarshal(buffer[:n], &bulletMsg)
+            if GameInstance != nil {
+                GameInstance.AddBulletFromPeer(bulletMsg)
+            }
         }
     }
 }
 
-func SendMovementUpdate(msg game.MovementMessage) {
-    data, err := json.Marshal(msg)
+func SendUpdate(data interface{}) {
+    jsonData, err := json.Marshal(data)
     if err != nil {
-        fmt.Println("Error encoding movement update:", err)
+        fmt.Println("Error encoding update:", err)
         return
     }
 
     mutex.Lock()
     defer mutex.Unlock()
     for _, conn := range ActiveConnections {
-        _, err := conn.Write(data)
+        _, err := conn.Write(jsonData)
         if err != nil {
-            fmt.Println("Error sending movement update:", err)
+            fmt.Println("Error sending update:", err)
         }
     }
 }

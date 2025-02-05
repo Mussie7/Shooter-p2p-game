@@ -50,6 +50,17 @@ type MovementMessage struct {
 	Angle float64 `json:"angle"` // Direction the player is facing
 }
 
+// BulletMessage struct (sent to peers when a bullet is fired)
+type BulletMessage struct {
+	Type    string  `json:"type"`  // "bullet"
+	OwnerID string  `json:"owner_id"`
+	X       float64 `json:"x"`
+	Y       float64 `json:"y"`
+	VX      float64 `json:"vx"`
+	VY      float64 `json:"vy"`
+}
+
+
 // Bullet struct (tracks owner)
 type Bullet struct {
 	x, y     float64
@@ -64,7 +75,7 @@ type Game struct {
 	bullets       []Bullet           // Stores all bullets
 	LocalPlayerID string             // ID of the local player
 	ActiveConnections map[string]net.Conn  // Stores active TCP connections to peers
-	SendUpdate        func(MovementMessage) // Field for sending updates
+	SendUpdate func(interface{}) // Field for sending updates
 
 }
 
@@ -109,14 +120,14 @@ func (g *Game) Update() error {
 		g.sendMovementUpdate(player)
 	}
 
-	// // Shooting Mechanism
-	// if g.player.cooldown > 0 {
-	// 	g.player.cooldown--
-	// }
-	// if ebiten.IsKeyPressed(ebiten.KeySpace) && g.player.cooldown == 0 {
-	// 	g.shootBullet()
-	// 	g.player.cooldown = ShotCooldown
-	// }
+	// Shooting Mechanism
+	if g.Players[g.LocalPlayerID].cooldown > 0 {
+		g.Players[g.LocalPlayerID].cooldown--
+	}
+	if ebiten.IsKeyPressed(ebiten.KeySpace) && g.Players[g.LocalPlayerID].cooldown == 0 {
+		g.shootBullet()
+		g.Players[g.LocalPlayerID].cooldown = ShotCooldown
+	}
 
 
 	// Bullet update logic
@@ -186,23 +197,56 @@ func (g *Game) UpdatePlayerPosition(msg MovementMessage) {
     }
 }
 
-// 🚀 **Bullet Collision Check**
+// **Bullet Collision Check**
 func checkCollision(b Bullet, p Player) bool {
 	return b.x > p.x && b.x < p.x+PlayerSize && b.y > p.y && b.y < p.y+PlayerSize
 }
 
-// // Shoot a bullet
-// func (g *Game) shootBullet() {
-// 	vx := BulletSpeed * math.Cos(g.player.angle)
-// 	vy := BulletSpeed * math.Sin(g.player.angle)
-// 	g.bullets = append(g.bullets, Bullet{
-// 		x:  g.player.x + PlayerSize/2,
-// 		y:  g.player.y + PlayerSize/2,
-// 		vx: vx, vy: vy,
-// 		active: true,
-// 		owner:  &g.player, // Tracks the shooter
-// 	})
-// }
+// Shoot a bullet and send an update to peers
+func (g *Game) shootBullet() {
+	vx := BulletSpeed * math.Cos(g.Players[g.LocalPlayerID].angle)
+	vy := BulletSpeed * math.Sin(g.Players[g.LocalPlayerID].angle)
+	newBullet := Bullet{
+		x:       g.Players[g.LocalPlayerID].x + PlayerSize/2,
+		y:       g.Players[g.LocalPlayerID].y + PlayerSize/2,
+		vx:      vx, 
+		vy:      vy,
+		active:  true,
+		ownerID: g.LocalPlayerID, // Identify shooter
+	}
+
+	g.bullets = append(g.bullets, newBullet)
+
+	// Send bullet data to all peers
+	if g.SendUpdate != nil {
+		bulletUpdate := BulletMessage{
+			Type:    "bullet",
+			OwnerID: newBullet.ownerID,
+			X:       newBullet.x,
+			Y:       newBullet.y,
+			VX:      newBullet.vx,
+			VY:      newBullet.vy,
+		}
+		g.SendUpdate(bulletUpdate)
+	}
+}
+
+// Add a bullet from a received peer message
+func (g *Game) AddBulletFromPeer(msg BulletMessage) {
+	mutex.Lock()
+	defer mutex.Unlock()
+
+	newBullet := Bullet{
+		x:       msg.X,
+		y:       msg.Y,
+		vx:      msg.VX,
+		vy:      msg.VY,
+		active:  true,
+		ownerID: msg.OwnerID,
+	}
+
+	g.bullets = append(g.bullets, newBullet)
+}
 
 // Draw renders everything
 func (g *Game) Draw(screen *ebiten.Image) {
@@ -229,7 +273,7 @@ func (g *Game) Draw(screen *ebiten.Image) {
 	}
 }
 
-// 🚀 **Draw Health Bar Above Players**
+// **Draw Health Bar Above Players**
 func (g *Game) drawHealthBar(screen *ebiten.Image, player *Player) {
 	barX := player.x - (HealthBarWidth-PlayerSize)/2
 	barY := player.y - 5 // Position above player
@@ -259,7 +303,7 @@ func (g *Game) Layout(outsideWidth, outsideHeight int) (int, int) {
 	return ScreenWidth, ScreenHeight
 }
 
-// 🚀 **Generate a Unique Spawn Location**
+// **Generate a Unique Spawn Location**
 func getRandomSpawn(existingPlayers map[string]*Player) (float64, float64) {
 	rand.Seed(time.Now().UnixNano()) // Seed randomness
 
