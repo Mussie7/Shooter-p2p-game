@@ -11,21 +11,26 @@ import (
 
 // Screen & player properties
 const (
-	ScreenWidth  = 800
-	ScreenHeight = 600
-	PlayerSize   = 20
-	PlayerSpeed  = 2
-	LineLength   = 15  // Length of direction indicator
-	BulletSize   = 5   // Bullet dimensions
-	BulletSpeed  = 4   // Bullet movement speed
-	ShotCooldown = 20  // Frames between shots
+	ScreenWidth     = 800
+	ScreenHeight    = 600
+	PlayerSize      = 20
+	PlayerSpeed     = 2
+	LineLength      = 15  // Length of direction indicator
+	BulletSize      = 5   // Bullet dimensions
+	BulletSpeed     = 4   // Bullet movement speed
+	ShotCooldown    = 20  // Frames between shots
+	DamageAmount    = 5   // New: Damage per bullet hit
+	MaxHealth       = 100 // New: Maximum player health
+	HealthBarWidth  = 20  // New: Health bar width
+	HealthBarHeight = 3   // New: Health bar height
 )
 
 // Player struct
 type Player struct {
-	x, y   float64
-	angle  float64
+	x, y     float64
+	angle    float64
 	cooldown int // Frames left until next shot
+	health   int // New: Player health
 }
 
 // Bullet struct
@@ -106,7 +111,13 @@ func (g *Game) Update() error {
 			// Fix: Player can't hit themselves
 			if g.bullets[i].owner != &g.player && checkCollision(g.bullets[i], g.player) {
 				g.bullets[i].active = false
-				println("Bullet hit the player!")
+				g.player.health -= DamageAmount // New: Reduce health
+				println("Bullet hit the player! Health:", g.player.health)
+
+				// Check if player is eliminated
+				if g.player.health <= 0 {
+					println("Player eliminated!")
+				}
 			}
 		}
 	}
@@ -124,11 +135,11 @@ func (g *Game) shootBullet() {
 	vx := BulletSpeed * math.Cos(g.player.angle)
 	vy := BulletSpeed * math.Sin(g.player.angle)
 	g.bullets = append(g.bullets, Bullet{
-		x: g.player.x + PlayerSize/2, 
-		y: g.player.y + PlayerSize/2, 
-		vx: vx, vy: vy, 
+		x:  g.player.x + PlayerSize/2,
+		y:  g.player.y + PlayerSize/2,
+		vx: vx, vy: vy,
 		active: true,
-		owner: &g.player, // Tracks the shooter
+		owner:  &g.player, // Tracks the shooter
 	})
 }
 
@@ -150,6 +161,33 @@ func (g *Game) Draw(screen *ebiten.Image) {
 			ebitenutil.DrawRect(screen, b.x, b.y, BulletSize, BulletSize, color.RGBA{255, 255, 0, 255})
 		}
 	}
+
+	// **Draw Health Bar**
+	g.drawHealthBar(screen)
+}
+
+// 🚀 **Draw Health Bar Above Player**
+func (g *Game) drawHealthBar(screen *ebiten.Image) {
+	barX := g.player.x - (HealthBarWidth-PlayerSize)/2
+	barY := g.player.y - 5 // Position above player
+
+	// Calculate health percentage
+	healthPercentage := float64(g.player.health) / float64(MaxHealth)
+	barCurrentWidth := HealthBarWidth * healthPercentage
+
+	// Change health bar color based on health
+	var healthColor color.Color
+	if healthPercentage > 0.2 {
+		healthColor = color.RGBA{0, 255, 0, 255} // Green when health is normal
+	} else {
+		healthColor = color.RGBA{255, 0, 0, 255} // Red when critically low
+	}
+
+	// Draw background (gray)
+	ebitenutil.DrawRect(screen, barX, barY, HealthBarWidth, HealthBarHeight, color.RGBA{100, 100, 100, 255})
+
+	// Draw health bar (green or red)
+	ebitenutil.DrawRect(screen, barX, barY, barCurrentWidth, HealthBarHeight, healthColor)
 }
 
 // Layout defines the screen size
@@ -159,7 +197,7 @@ func (g *Game) Layout(outsideWidth, outsideHeight int) (int, int) {
 
 func main() {
 	game := &Game{
-		player: Player{x: ScreenWidth/2 - PlayerSize/2, y: ScreenHeight/2 - PlayerSize/2},
+		player: Player{x: ScreenWidth/2 - PlayerSize/2, y: ScreenHeight/2 - PlayerSize/2, health: MaxHealth}, // New: Initialize health
 	}
 
 	// Set window properties
