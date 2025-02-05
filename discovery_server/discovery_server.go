@@ -58,13 +58,17 @@ func handleConnection(conn net.Conn) {
 		peers[req.Addr] = true
 		fmt.Println("Registered peer:", req.Addr)
 
+	case "deregister": // Remove peer from active list
+		delete(peers, req.Addr)
+		fmt.Println("Deregistered peer:", req.Addr)
+
 	case "get_peers":
 		var peerList []string
 		for addr := range peers {
 			peerList = append(peerList, addr)
 		}
 		response := Response{Peers: peerList}
-		mutex.Unlock()
+		mutex.Unlock() // Unlock before sending response
 
 		encoder := json.NewEncoder(conn)
 		encoder.Encode(response)

@@ -7,7 +7,8 @@ import (
 	"os"
 	"sync"
 	"strings"
-	// "time"
+	"os/signal"
+	"syscall"
 )
 
 // Request structure for discovery server
@@ -37,6 +38,9 @@ func main() {
 
 	port := os.Args[1]
 	selfAddr = fmt.Sprintf("192.168.0.101:%s", port) // Store self address
+
+	// Handle graceful shutdown
+	handleExit()
 
 	// Step 1: Register with Discovery Server
 	registerWithDiscovery(selfAddr)
@@ -71,6 +75,32 @@ func registerWithDiscovery(addr string) {
 	json.NewEncoder(conn).Encode(req)
 
 	fmt.Println("Registered with discovery server as:", addr)
+}
+
+// **Send deregistration request when exiting**
+func deregisterFromDiscovery() {
+	conn, err := net.Dial("tcp", discoveryServer)
+	if err != nil {
+		fmt.Println("Error connecting to discovery server:", err)
+		return
+	}
+	defer conn.Close()
+
+	req := Request{Type: "deregister", Addr: selfAddr}
+	json.NewEncoder(conn).Encode(req)
+
+	fmt.Println("Deregistered from discovery server:", selfAddr)
+}
+
+// Handle SIGINT (CTRL+C) to clean up before exit
+func handleExit() {
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		<-sigChan
+		deregisterFromDiscovery() // Deregister before exiting
+		os.Exit(0)
+	}()
 }
 
 //  Get the list of peers from the discovery server
