@@ -30,45 +30,45 @@ const discoveryServer = "192.168.0.101:5000" // Replace with actual local IP
 var (
 	ActiveConnections = make(map[string]net.Conn) // Track connected peers
 	mutex            = &sync.Mutex{}
-	selfAddr         string // Store this peer's address
+	SelfAddr         string // Store this peer's address
 	GameInstance *game.Game // Reference to game instance (main.go)
 
 )
 
-func main() {
-	if len(os.Args) < 2 {
-		fmt.Println("Usage: go run peer.go <port>")
-		os.Exit(1)
-	}
+// func main() {
+// 	if len(os.Args) < 2 {
+// 		fmt.Println("Usage: go run peer.go <port>")
+// 		os.Exit(1)
+// 	}
 
-	port := os.Args[1]
-	selfAddr = fmt.Sprintf("192.168.0.101:%s", port) // Store self address
+// 	port := os.Args[1]
+// 	selfAddr = fmt.Sprintf("192.168.0.101:%s", port) // Store self address
 
-	// Handle graceful shutdown
-	handleExit()
+// 	// Handle graceful shutdown
+// 	handleExit()
 
-	// Step 1: Register with Discovery Server
-	registerWithDiscovery(selfAddr)
+// 	// Step 1: Register with Discovery Server
+// 	RegisterWithDiscovery(selfAddr)
 
-	// Step 2: Start Listening for TCP Connections
-	go StartPeerServer(selfAddr)
+// 	// Step 2: Start Listening for TCP Connections
+// 	go StartPeerServer(selfAddr)
 
-	// Step 3: Fetch and Connect to Peers
-	peerList := getPeers()
-	fmt.Println("Discovered Peers:", peerList)
+// 	// Step 3: Fetch and Connect to Peers
+// 	peerList := GetPeers()
+// 	fmt.Println("Discovered Peers:", peerList)
 
-	for _, peer := range peerList {
-		if peer != selfAddr { //  Prevent self-connections
-			go connectToPeer(peer)
-		}
-	}
+// 	for _, peer := range peerList {
+// 		if peer != selfAddr { //  Prevent self-connections
+// 			go ConnectToPeer(peer)
+// 		}
+// 	}
 
-	// Keep the program running
-	select {}
-}
+// 	// Keep the program running
+// 	select {}
+// }
 
 //  Register this peer with the discovery server
-func registerWithDiscovery(addr string) {
+func RegisterWithDiscovery(addr string) {
 	conn, err := net.Dial("tcp", discoveryServer)
 	if err != nil {
 		fmt.Println("Error connecting to discovery server:", err)
@@ -91,10 +91,10 @@ func deregisterFromDiscovery() {
 	}
 	defer conn.Close()
 
-	req := Request{Type: "deregister", Addr: selfAddr}
+	req := Request{Type: "deregister", Addr: SelfAddr}
 	json.NewEncoder(conn).Encode(req)
 
-	fmt.Println("Deregistered from discovery server:", selfAddr)
+	fmt.Println("Deregistered from discovery server:", SelfAddr)
 }
 
 // Handle SIGINT (CTRL+C) to clean up before exit
@@ -109,7 +109,7 @@ func handleExit() {
 }
 
 //  Get the list of peers from the discovery server
-func getPeers() []string {
+func GetPeers() []string {
     for retries := 0; retries < 3; retries++ {
         conn, err := net.Dial("tcp", discoveryServer)
         if err != nil {
@@ -125,9 +125,10 @@ func getPeers() []string {
         var res Response
         json.NewDecoder(conn).Decode(&res)
 
-        filteredPeers := []string{}
+        // Filter out self address
+		filteredPeers := []string{}
         for _, peer := range res.Peers {
-            if peer != selfAddr {
+            if peer != SelfAddr {
                 filteredPeers = append(filteredPeers, peer)
             }
         }
@@ -175,7 +176,7 @@ func StartPeerServer(addr string) {
 }
 
 //  Connect to a discovered peer
-func connectToPeer(peerAddr string) {
+func ConnectToPeer(peerAddr string) {
 	mutex.Lock()
 	if _, exists := ActiveConnections[peerAddr]; exists {
 		mutex.Unlock()
@@ -219,7 +220,7 @@ func handlePeerCommunication(conn net.Conn) {
             continue
         }
 
-        // **Update game state**
+		// **Update game state with received movement**
         if message.Type == "move" && GameInstance != nil {
             GameInstance.UpdatePlayerPosition(message)
         }
