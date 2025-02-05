@@ -26,11 +26,15 @@ const (
 	ShotCooldown    = 20  // Frames between shots
 	DamageAmount    = 5   // New: Damage per bullet hit
 	MaxHealth       = 100 // New: Maximum player health
-	HealthBarWidth  = 20  // New: Health bar width
+	HealthBarWidth  = 35  // New: Health bar width
 	HealthBarHeight = 3   // New: Health bar height
 )
 
-var mutex sync.Mutex
+var (
+	mutex sync.Mutex
+	tankImage *ebiten.Image
+
+)
 
 // Player struct (now includes velocity for smoother movement updates)
 type Player struct {
@@ -40,6 +44,8 @@ type Player struct {
 	health   int     // Health bar
 	cooldown int     // Shooting cooldown
 	eliminated bool    // New: Marks player as eliminated
+	Image  *ebiten.Image // Store the player's tank sprite
+
 
 }
 
@@ -80,6 +86,16 @@ type Game struct {
 	SendUpdate func(interface{}) // Field for sending updates
 
 }
+
+// LoadAssets loads the tank sprite
+func LoadAssets() {
+    img, _, err := ebitenutil.NewImageFromFile("assets/green_tank.png")
+    if err != nil {
+        log.Fatal("Failed to load tank sprite:", err)
+    }
+    tankImage = img
+}
+
 
 func (g *Game) Update() error {
 	player, exists := g.Players[g.LocalPlayerID]
@@ -280,19 +296,23 @@ func (g *Game) AddBulletFromPeer(msg BulletMessage) {
 // Draw renders everything
 func (g *Game) Draw(screen *ebiten.Image) {
 	for _, player := range g.Players { // Draw all players
+
+		if player.Image == nil {
+            player.Image = tankImage // Assign the tank sprite to each player
+        }
+
+        op := &ebiten.DrawImageOptions{}
+		scale := 0.15 // Adjust this value as needed
+		op.GeoM.Scale(scale, scale) // Scale the sprite
+        op.GeoM.Translate(-float64(player.Image.Bounds().Dx())*scale/2, -float64(player.Image.Bounds().Dy())*scale/2) // Center the rotation
+        op.GeoM.Rotate(player.angle) // Rotate the sprite
+        op.GeoM.Translate(player.x, player.y) // Position the sprite at the player's location
+
+        screen.DrawImage(player.Image, op) // Render the tank sprite
+
 		if player.eliminated { // Skip eliminated players
 			continue
 		}
-
-		// Draw player as a white rectangle
-		ebitenutil.DrawRect(screen, player.x, player.y, PlayerSize, PlayerSize, color.White)
-
-		// Draw facing direction
-		centerX := player.x + PlayerSize/2
-		centerY := player.y + PlayerSize/2
-		endX := centerX + math.Cos(player.angle)*LineLength
-		endY := centerY + math.Sin(player.angle)*LineLength
-		ebitenutil.DrawLine(screen, centerX, centerY, endX, endY, color.RGBA{255, 0, 0, 255})
 
 		// Draw health bar for each player
 		g.drawHealthBar(screen, player)
@@ -301,19 +321,23 @@ func (g *Game) Draw(screen *ebiten.Image) {
 	// Draw bullets
 	for _, b := range g.bullets {
 		if b.active {
-			ebitenutil.DrawRect(screen, b.x, b.y, BulletSize, BulletSize, color.RGBA{255, 255, 0, 255})
+			ebitenutil.DrawRect(screen, b.x - 12, b.y - 12, BulletSize, BulletSize, color.RGBA{255, 255, 0, 255})
 		}
 	}
 }
 
 // **Draw Health Bar Above Players**
 func (g *Game) drawHealthBar(screen *ebiten.Image, player *Player) {
-	barX := player.x - (HealthBarWidth-PlayerSize)/2
-	barY := player.y - 5 // Position above player
+	scale := 0.15 // The same scale used for the tank sprite
+	tankHeight := float64(tankImage.Bounds().Dy()) * scale
 
-	// Calculate health percentage
-	healthPercentage := float64(player.health) / float64(MaxHealth)
-	barCurrentWidth := HealthBarWidth * healthPercentage
+    // Calculate health percentage
+    healthPercentage := float64(player.health) / float64(MaxHealth)
+    barCurrentWidth := HealthBarWidth * healthPercentage
+
+    // Calculate the position of the health bar based on the player's rotation
+    barX := player.x - barCurrentWidth/2
+    barY := player.y - tankHeight/2 - 10 // Position above player (adjust as needed)
 
 	// Change health bar color based on health
 	var healthColor color.Color
@@ -361,6 +385,9 @@ func getRandomSpawn(existingPlayers map[string]*Player) (float64, float64) {
 }
 
 func (g *Game) MainGame(game *Game) {
+	// Load tank sprite
+	LoadAssets()
+
 	// Get a random spawn position
 	spawnX, spawnY := getRandomSpawn(game.Players)
 
