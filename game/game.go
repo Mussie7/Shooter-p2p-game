@@ -39,6 +39,8 @@ type Player struct {
 	angle    float64 // Facing direction
 	health   int     // Health bar
 	cooldown int     // Shooting cooldown
+	eliminated bool    // New: Marks player as eliminated
+
 }
 
 // MovementMessage struct (sent to peers when a player moves)
@@ -80,7 +82,11 @@ type Game struct {
 }
 
 func (g *Game) Update() error {
-	player := g.Players[g.LocalPlayerID]
+	player, exists := g.Players[g.LocalPlayerID]
+    if !exists || player.eliminated { // Prevent updates for eliminated players
+        return nil
+    }
+
 	vx, vy := 0.0, 0.0 // Velocity
 
 	if ebiten.IsKeyPressed(ebiten.KeyW) {
@@ -144,7 +150,7 @@ func (g *Game) Update() error {
 
 			// Bullet collision with other players
 			for pid, target := range g.Players {
-				if pid != g.bullets[i].ownerID && checkCollision(g.bullets[i], *target) {
+				if pid != g.bullets[i].ownerID && checkCollision(g.bullets[i], target, g) {
 					g.bullets[i].active = false
 					target.health -= DamageAmount // Apply damage
 					g.Players[pid] = target // Update player health
@@ -198,8 +204,31 @@ func (g *Game) UpdatePlayerPosition(msg MovementMessage) {
 }
 
 // **Bullet Collision Check**
-func checkCollision(b Bullet, p Player) bool {
-	return b.x > p.x && b.x < p.x+PlayerSize && b.y > p.y && b.y < p.y+PlayerSize
+func checkCollision(b Bullet, p *Player, g *Game) bool {
+	if b.x > p.x && b.x < p.x+PlayerSize && b.y > p.y && b.y < p.y+PlayerSize {
+		p.health -= DamageAmount
+		fmt.Println("Player", p.id, "hit! New health:", p.health)
+
+		if p.health <= 0 && !p.eliminated {
+			fmt.Println("Player", p.id, "eliminated!")
+			p.eliminated = true // Mark as eliminated
+			go g.removePlayerAfterDelay(p.id) // Remove after delay
+		}
+		return true
+	}
+	return false
+}
+
+func (g *Game) removePlayerAfterDelay(playerID string) {
+	time.Sleep(3 * time.Second) // Wait 3 seconds before removal
+
+	mutex.Lock()
+	defer mutex.Unlock()
+
+	if _, exists := g.Players[playerID]; exists {
+		fmt.Println("Removing player:", playerID)
+		delete(g.Players, playerID) // Now safe to remove
+	}
 }
 
 // Shoot a bullet and send an update to peers
@@ -251,6 +280,10 @@ func (g *Game) AddBulletFromPeer(msg BulletMessage) {
 // Draw renders everything
 func (g *Game) Draw(screen *ebiten.Image) {
 	for _, player := range g.Players { // Draw all players
+		if player.eliminated { // Skip eliminated players
+			continue
+		}
+
 		// Draw player as a white rectangle
 		ebitenutil.DrawRect(screen, player.x, player.y, PlayerSize, PlayerSize, color.White)
 
