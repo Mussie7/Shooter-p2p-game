@@ -1,4 +1,4 @@
-package main
+package peer
 
 import (
 	"encoding/json"
@@ -9,6 +9,9 @@ import (
 	"strings"
 	"os/signal"
 	"syscall"
+	"time"
+
+	"shooter/game"
 )
 
 // Request structure for discovery server
@@ -25,9 +28,11 @@ type Response struct {
 const discoveryServer = "192.168.0.101:5000" // Replace with actual local IP
 
 var (
-	activeConnections = make(map[string]net.Conn) // Track connected peers
+	ActiveConnections = make(map[string]net.Conn) // Track connected peers
 	mutex            = &sync.Mutex{}
 	selfAddr         string // Store this peer's address
+	GameInstance *game.Game // Reference to game instance (main.go)
+
 )
 
 func main() {
@@ -46,7 +51,7 @@ func main() {
 	registerWithDiscovery(selfAddr)
 
 	// Step 2: Start Listening for TCP Connections
-	go startPeerServer(selfAddr)
+	go StartPeerServer(selfAddr)
 
 	// Step 3: Fetch and Connect to Peers
 	peerList := getPeers()
@@ -105,33 +110,37 @@ func handleExit() {
 
 //  Get the list of peers from the discovery server
 func getPeers() []string {
-	conn, err := net.Dial("tcp", discoveryServer)
-	if err != nil {
-		fmt.Println("Error connecting to discovery server:", err)
-		return nil
-	}
-	defer conn.Close()
+    for retries := 0; retries < 3; retries++ {
+        conn, err := net.Dial("tcp", discoveryServer)
+        if err != nil {
+            fmt.Println("Error connecting to discovery server (retrying)...", err)
+            time.Sleep(2 * time.Second)
+            continue
+        }
+        defer conn.Close()
 
-	req := Request{Type: "get_peers"}
-	json.NewEncoder(conn).Encode(req)
+        req := Request{Type: "get_peers"}
+        json.NewEncoder(conn).Encode(req)
 
-	var res Response
-	json.NewDecoder(conn).Decode(&res)
+        var res Response
+        json.NewDecoder(conn).Decode(&res)
 
-	// Filter out self-address before returning
-	filteredPeers := []string{}
-	for _, peer := range res.Peers {
-		if peer != selfAddr { //  Prevent listing self
-			filteredPeers = append(filteredPeers, peer)
-		}
-	}
+        filteredPeers := []string{}
+        for _, peer := range res.Peers {
+            if peer != selfAddr {
+                filteredPeers = append(filteredPeers, peer)
+            }
+        }
 
-	return filteredPeers
+        return filteredPeers // Success case
+    }
+    return nil // Return empty after 3 failed attempts
 }
 
 
+
 //  Start TCP server to listen for peer connections
-func startPeerServer(addr string) {
+func StartPeerServer(addr string) {
 	listener, err := net.Listen("tcp", fmt.Sprintf("0.0.0.0:%s", strings.Split(addr, ":")[1]))
 	if err != nil {
 		fmt.Println("Error starting peer server:", err)
@@ -151,12 +160,12 @@ func startPeerServer(addr string) {
 		peerAddr := conn.RemoteAddr().String()
 
 		mutex.Lock()
-		if _, exists := activeConnections[peerAddr]; exists {
+		if _, exists := ActiveConnections[peerAddr]; exists {
 			mutex.Unlock()
 			conn.Close() // Close duplicate connection
 			continue
 		}
-		activeConnections[peerAddr] = conn
+		ActiveConnections[peerAddr] = conn
 		mutex.Unlock()
 
 		fmt.Println("Accepted connection from:", peerAddr)
@@ -168,7 +177,7 @@ func startPeerServer(addr string) {
 //  Connect to a discovered peer
 func connectToPeer(peerAddr string) {
 	mutex.Lock()
-	if _, exists := activeConnections[peerAddr]; exists {
+	if _, exists := ActiveConnections[peerAddr]; exists {
 		mutex.Unlock()
 		return //  Prevent duplicate connections
 	}
@@ -181,7 +190,7 @@ func connectToPeer(peerAddr string) {
 	}
 
 	mutex.Lock()
-	activeConnections[peerAddr] = conn
+	ActiveConnections[peerAddr] = conn
 	mutex.Unlock()
 
 	fmt.Println("Connected to peer:", peerAddr)
@@ -189,21 +198,47 @@ func connectToPeer(peerAddr string) {
 	go handlePeerCommunication(conn)
 }
 
-//  Handle messages from peers
 func handlePeerCommunication(conn net.Conn) {
-	defer conn.Close()
+    defer conn.Close()
 
-	buffer := make([]byte, 1024)
-	for {
-		n, err := conn.Read(buffer)
-		if err != nil {
-			fmt.Println("Peer disconnected:", conn.RemoteAddr().String())
-			mutex.Lock()
-			delete(activeConnections, conn.RemoteAddr().String())
-			mutex.Unlock()
-			return
-		}
-		message := string(buffer[:n])
-		fmt.Println("Received from", conn.RemoteAddr().String(), ":", message)
-	}
+    buffer := make([]byte, 1024)
+    for {
+        n, err := conn.Read(buffer)
+        if err != nil {
+            fmt.Println("Peer disconnected:", conn.RemoteAddr().String())
+            mutex.Lock()
+            delete(ActiveConnections, conn.RemoteAddr().String())
+            mutex.Unlock()
+            return
+        }
+
+        var message game.MovementMessage
+        err = json.Unmarshal(buffer[:n], &message)
+        if err != nil {
+            fmt.Println("Error decoding message:", err)
+            continue
+        }
+
+        // **Update game state**
+        if message.Type == "move" && GameInstance != nil {
+            GameInstance.UpdatePlayerPosition(message)
+        }
+    }
+}
+
+func SendMovementUpdate(msg game.MovementMessage) {
+    data, err := json.Marshal(msg)
+    if err != nil {
+        fmt.Println("Error encoding movement update:", err)
+        return
+    }
+
+    mutex.Lock()
+    defer mutex.Unlock()
+    for _, conn := range ActiveConnections {
+        _, err := conn.Write(data)
+        if err != nil {
+            fmt.Println("Error sending movement update:", err)
+        }
+    }
 }

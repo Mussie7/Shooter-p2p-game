@@ -1,4 +1,4 @@
-package main
+package game
 
 import (
 	"fmt"
@@ -6,8 +6,10 @@ import (
 	"log"
 	"math"
 	"math/rand"
+	"net"
+	"sync"
 	"time"
-	
+
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/ebitenutil"
 )
@@ -28,13 +30,24 @@ const (
 	HealthBarHeight = 3   // New: Health bar height
 )
 
-// Player struct (now includes ID)
+var mutex sync.Mutex
+
+// Player struct (now includes velocity for smoother movement updates)
 type Player struct {
 	id       string  // Unique player ID
 	x, y     float64 // Position
 	angle    float64 // Facing direction
 	health   int     // Health bar
 	cooldown int     // Shooting cooldown
+}
+
+// MovementMessage struct (sent to peers when a player moves)
+type MovementMessage struct {
+	Type  string  `json:"type"`  // "move"
+	ID    string  `json:"id"`    // Player ID
+	X     float64 `json:"x"`     // Updated X position
+	Y     float64 `json:"y"`     // Updated Y position
+	Angle float64 `json:"angle"` // Direction the player is facing
 }
 
 // Bullet struct (tracks owner)
@@ -47,36 +60,38 @@ type Bullet struct {
 
 // Game struct (supports multiple players)
 type Game struct {
-	players       map[string]*Player // Stores all players
+	Players       map[string]*Player // Stores all players
 	bullets       []Bullet           // Stores all bullets
-	localPlayerID string             // ID of the local player
+	LocalPlayerID string             // ID of the local player
+	ActiveConnections map[string]net.Conn  // Stores active TCP connections to peers
+	SendUpdate        func(MovementMessage) // Field for sending updates
+
 }
 
 func (g *Game) Update() error {
-	for id, player := range g.players { // Iterate through all players
-		vx, vy := 0.0, 0.0
+	player := g.Players[g.LocalPlayerID]
+	vx, vy := 0.0, 0.0 // Velocity
 
-		// Only update local player's movement
-		if id == g.localPlayerID {
-			if ebiten.IsKeyPressed(ebiten.KeyW) {
-				vy -= PlayerSpeed
-			}
-			if ebiten.IsKeyPressed(ebiten.KeyS) {
-				vy += PlayerSpeed
-			}
-			if ebiten.IsKeyPressed(ebiten.KeyA) {
-				vx -= PlayerSpeed
-			}
-			if ebiten.IsKeyPressed(ebiten.KeyD) {
-				vx += PlayerSpeed
-			}
-		}
+	if ebiten.IsKeyPressed(ebiten.KeyW) {
+		vy -= PlayerSpeed
+	}
+	if ebiten.IsKeyPressed(ebiten.KeyS) {
+		vy += PlayerSpeed
+	}
+	if ebiten.IsKeyPressed(ebiten.KeyA) {
+		vx -= PlayerSpeed
+	}
+	if ebiten.IsKeyPressed(ebiten.KeyD) {
+		vx += PlayerSpeed
+	}
 
-		// Update position
+	// Only send updates if movement occurred
+	if vx != 0 || vy != 0 {
+		player.angle = math.Atan2(vy, vx)
 		player.x += vx
 		player.y += vy
 
-		// Prevent movement off-screen
+		// Prevent moving off-screen
 		if player.x < 0 {
 			player.x = 0
 		}
@@ -90,12 +105,8 @@ func (g *Game) Update() error {
 			player.y = ScreenHeight - PlayerSize
 		}
 
-		// Update direction if moving
-		if vx != 0 || vy != 0 {
-			player.angle = math.Atan2(vy, vx)
-		}
-
-		g.players[id] = player // Save updated player state
+		// Send movement update to peers
+		g.sendMovementUpdate(player)
 	}
 
 	// // Shooting Mechanism
@@ -121,15 +132,15 @@ func (g *Game) Update() error {
 			}
 
 			// Bullet collision with other players
-			for pid, target := range g.players {
+			for pid, target := range g.Players {
 				if pid != g.bullets[i].ownerID && checkCollision(g.bullets[i], *target) {
 					g.bullets[i].active = false
 					target.health -= DamageAmount // Apply damage
-					g.players[pid] = target // Update player health
+					g.Players[pid] = target // Update player health
 
 					// Elimination check
 					if target.health <= 0 {
-						delete(g.players, pid) // Remove eliminated player
+						delete(g.Players, pid) // Remove eliminated player
 						fmt.Println("Player", pid, "eliminated!")
 					}
 				}
@@ -138,6 +149,85 @@ func (g *Game) Update() error {
 	}
 
 	return nil
+}
+
+func (g *Game) sendMovementUpdate(player *Player) {
+	message := MovementMessage{
+		Type:  "move",
+		ID:    player.id,
+		X:     player.x,
+		Y:     player.y,
+		Angle: player.angle,
+	}
+
+	// Call the injected function
+	if g.SendUpdate != nil {
+		g.SendUpdate(message)
+	}
+}
+
+// // Handle messages from peers
+// func (g *Game) handlePeerCommunication(conn net.Conn) {
+//     defer conn.Close()
+
+//     buffer := make([]byte, 1024)
+//     for {
+//         n, err := conn.Read(buffer)
+//         if err != nil {
+//             fmt.Println("Peer disconnected:", conn.RemoteAddr().String())
+//             mutex.Lock()
+//             delete(g.activeConnections, conn.RemoteAddr().String())
+//             mutex.Unlock()
+//             return
+//         }
+
+//         var message MovementMessage
+//         err = json.Unmarshal(buffer[:n], &message)
+//         if err != nil {
+//             fmt.Println("Error decoding message:", err)
+//             continue
+//         }
+
+//         // **Process movement update**
+//         if message.Type == "move" {
+//             mutex.Lock()
+//             if player, exists := g.players[message.ID]; exists {
+//                 player.x = message.X
+//                 player.y = message.Y
+//                 player.angle = message.Angle
+//             } else {
+//                 // **Create new player if not found**
+//                 g.players[message.ID] = &Player{
+//                     id:     message.ID,
+//                     x:      message.X,
+//                     y:      message.Y,
+//                     angle:  message.Angle,
+//                     health: MaxHealth,
+//                 }
+//             }
+//             mutex.Unlock()
+//         }
+//     }
+// }
+
+func (g *Game) UpdatePlayerPosition(msg MovementMessage) {
+    mutex.Lock()
+    defer mutex.Unlock()
+
+    if player, exists := g.Players[msg.ID]; exists {
+        player.x = msg.X
+        player.y = msg.Y
+        player.angle = msg.Angle
+    } else {
+        // **Create new player if they don't exist**
+        g.Players[msg.ID] = &Player{
+            id:     msg.ID,
+            x:      msg.X,
+            y:      msg.Y,
+            angle:  msg.Angle,
+            health: MaxHealth,
+        }
+    }
 }
 
 // 🚀 **Bullet Collision Check**
@@ -160,7 +250,7 @@ func checkCollision(b Bullet, p Player) bool {
 
 // Draw renders everything
 func (g *Game) Draw(screen *ebiten.Image) {
-	for _, player := range g.players { // Draw all players
+	for _, player := range g.Players { // Draw all players
 		// Draw player as a white rectangle
 		ebitenutil.DrawRect(screen, player.x, player.y, PlayerSize, PlayerSize, color.White)
 
@@ -237,20 +327,20 @@ func getRandomSpawn(existingPlayers map[string]*Player) (float64, float64) {
 	}
 }
 
-func main() {
-	game := &Game{
-		players: make(map[string]*Player), // Initialize player map
-	}
+func (g *Game) MainGame(game *Game) {
+	// game := &Game{
+	// 	Players: make(map[string]*Player), // Initialize player map
+	// }
 
 	// Assign a unique local player ID
 	localID := "player_1" // In multiplayer, this would be dynamically assigned
-	game.localPlayerID = localID
+	game.LocalPlayerID = localID
 
 	// Get a random spawn position
-	spawnX, spawnY := getRandomSpawn(game.players)
+	spawnX, spawnY := getRandomSpawn(game.Players)
 
 	// Create the local player with a unique ID and random spawn position
-	game.players[localID] = &Player{
+	game.Players[localID] = &Player{
 		id:     localID,
 		x:      spawnX,
 		y:      spawnY,
@@ -266,3 +356,33 @@ func main() {
 		log.Fatal(err)
 	}
 }
+
+// func main() {
+// 	game := &Game{
+// 		Players: make(map[string]*Player), // Initialize player map
+// 	}
+
+// 	// Assign a unique local player ID
+// 	localID := "player_1" // In multiplayer, this would be dynamically assigned
+// 	game.LocalPlayerID = localID
+
+// 	// Get a random spawn position
+// 	spawnX, spawnY := game.GetRandomSpawn(game.Players)
+
+// 	// Create the local player with a unique ID and random spawn position
+// 	game.Players[localID] = &Player{
+// 		id:     localID,
+// 		x:      spawnX,
+// 		y:      spawnY,
+// 		health: MaxHealth,
+// 	}
+
+// 	// Set window properties
+// 	ebiten.SetWindowSize(ScreenWidth, ScreenHeight)
+// 	ebiten.SetWindowTitle("2D Battle Royale")
+
+// 	// Run game loop
+// 	if err := ebiten.RunGame(game); err != nil {
+// 		log.Fatal(err)
+// 	}
+// }
