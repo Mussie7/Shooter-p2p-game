@@ -33,6 +33,7 @@ type Bullet struct {
 	x, y   float64
 	vx, vy float64
 	active bool
+	owner  *Player // Tracks who fired the bullet
 }
 
 // Game struct
@@ -41,7 +42,7 @@ type Game struct {
 	bullets []Bullet
 }
 
-// Update handles movement & shooting
+// Update handles movement, shooting, and collisions
 func (g *Game) Update() error {
 	vx, vy := 0.0, 0.0 // Velocity
 
@@ -90,14 +91,22 @@ func (g *Game) Update() error {
 		g.player.cooldown = ShotCooldown
 	}
 
-	// Update bullets
+	// Update bullets & check collisions
 	for i := range g.bullets {
 		if g.bullets[i].active {
 			g.bullets[i].x += g.bullets[i].vx
 			g.bullets[i].y += g.bullets[i].vy
-			// Deactivate bullet if off-screen
+
+			// Check if bullet is off-screen
 			if g.bullets[i].x < 0 || g.bullets[i].x > ScreenWidth || g.bullets[i].y < 0 || g.bullets[i].y > ScreenHeight {
 				g.bullets[i].active = false
+				continue
+			}
+
+			// Fix: Player can't hit themselves
+			if g.bullets[i].owner != &g.player && checkCollision(g.bullets[i], g.player) {
+				g.bullets[i].active = false
+				println("Bullet hit the player!")
 			}
 		}
 	}
@@ -105,11 +114,22 @@ func (g *Game) Update() error {
 	return nil
 }
 
+// 🚀 **Bullet Collision Check**
+func checkCollision(b Bullet, p Player) bool {
+	return b.x > p.x && b.x < p.x+PlayerSize && b.y > p.y && b.y < p.y+PlayerSize
+}
+
 // Shoot a bullet
 func (g *Game) shootBullet() {
 	vx := BulletSpeed * math.Cos(g.player.angle)
 	vy := BulletSpeed * math.Sin(g.player.angle)
-	g.bullets = append(g.bullets, Bullet{x: g.player.x + PlayerSize/2, y: g.player.y + PlayerSize/2, vx: vx, vy: vy, active: true})
+	g.bullets = append(g.bullets, Bullet{
+		x: g.player.x + PlayerSize/2, 
+		y: g.player.y + PlayerSize/2, 
+		vx: vx, vy: vy, 
+		active: true,
+		owner: &g.player, // Tracks the shooter
+	})
 }
 
 // Draw renders everything
