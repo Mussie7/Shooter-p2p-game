@@ -25,11 +25,10 @@ type Response struct {
 	Peers []string `json:"peers"`
 }
 
-const discoveryServer = "192.168.0.101:5000" // Replace with actual local IP
-
 var (
+	DiscoveryServer = "192.168.0.100:5000" // Replace with actual local IP
 	ActiveConnections = make(map[string]net.Conn) // Track connected peers
-	mutex            = &sync.Mutex{}
+	Mutex            = &sync.Mutex{}
 	SelfAddr         string // Store this peer's address
 	GameInstance *game.Game // Reference to game instance (main.go)
 
@@ -37,7 +36,7 @@ var (
 
 //  Register this peer with the discovery server
 func RegisterWithDiscovery(addr string) {
-	conn, err := net.Dial("tcp", discoveryServer)
+	conn, err := net.Dial("tcp", DiscoveryServer)
 	if err != nil {
 		fmt.Println("Error connecting to discovery server:", err)
 		return
@@ -52,7 +51,7 @@ func RegisterWithDiscovery(addr string) {
 
 // **Send deregistration request when exiting**
 func deregisterFromDiscovery() {
-	conn, err := net.Dial("tcp", discoveryServer)
+	conn, err := net.Dial("tcp", DiscoveryServer)
 	if err != nil {
 		fmt.Println("Error connecting to discovery server:", err)
 		return
@@ -77,12 +76,12 @@ func HandleExit() {
 		deregisterFromDiscovery()
 
 		// Close all active connections
-		mutex.Lock()
+		Mutex.Lock()
 		for _, conn := range ActiveConnections {
 			conn.Close()
 		}
 		ActiveConnections = make(map[string]net.Conn) // Clear connections
-		mutex.Unlock()
+		Mutex.Unlock()
 
 		os.Exit(0)
 	}()
@@ -91,7 +90,7 @@ func HandleExit() {
 //  Get the list of peers from the discovery server
 func GetPeers() []string {
     for retries := 0; retries < 3; retries++ {
-        conn, err := net.Dial("tcp", discoveryServer)
+        conn, err := net.Dial("tcp", DiscoveryServer)
         if err != nil {
             fmt.Println("Error connecting to discovery server (retrying)...", err)
             time.Sleep(2 * time.Second)
@@ -138,14 +137,14 @@ func StartPeerServer(addr string) {
 
 		peerAddr := conn.RemoteAddr().String()
 
-		mutex.Lock()
+		Mutex.Lock()
 		if _, exists := ActiveConnections[peerAddr]; exists {
-			mutex.Unlock()
+			Mutex.Unlock()
 			conn.Close() // Close duplicate connection
 			continue
 		}
 		ActiveConnections[peerAddr] = conn
-		mutex.Unlock()
+		Mutex.Unlock()
 
 		fmt.Println("Accepted connection from:", peerAddr)
 
@@ -155,12 +154,12 @@ func StartPeerServer(addr string) {
 
 //  Connect to a discovered peer
 func ConnectToPeer(peerAddr string) {
-	mutex.Lock()
+	Mutex.Lock()
 	if _, exists := ActiveConnections[peerAddr]; exists {
-		mutex.Unlock()
+		Mutex.Unlock()
 		return //  Prevent duplicate connections
 	}
-	mutex.Unlock()
+	Mutex.Unlock()
 
 	conn, err := net.Dial("tcp", peerAddr)
 	if err != nil {
@@ -168,9 +167,9 @@ func ConnectToPeer(peerAddr string) {
 		return
 	}
 
-	mutex.Lock()
+	Mutex.Lock()
 	ActiveConnections[peerAddr] = conn
-	mutex.Unlock()
+	Mutex.Unlock()
 
 	fmt.Println("Connected to peer:", peerAddr)
 
@@ -188,9 +187,9 @@ func handlePeerCommunication(conn net.Conn) {
             fmt.Println("Peer disconnected:", peerAddr)
 
 			// Remove the peer from active connections
-            mutex.Lock()
+            Mutex.Lock()
             delete(ActiveConnections, peerAddr)
-            mutex.Unlock()
+            Mutex.Unlock()
 
 			// Notify the game to remove the player
 			if GameInstance != nil {
@@ -238,8 +237,8 @@ func SendUpdate(data interface{}) {
         return
     }
 
-    mutex.Lock()
-    defer mutex.Unlock()
+    Mutex.Lock()
+    defer Mutex.Unlock()
     for _, conn := range ActiveConnections {
         _, err := conn.Write(jsonData)
         if err != nil {

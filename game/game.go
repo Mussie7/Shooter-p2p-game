@@ -38,10 +38,10 @@ var (
 
 // Player struct (now includes velocity for smoother movement updates)
 type Player struct {
-	id       string  // Unique player ID
-	x, y     float64 // Position
-	angle    float64 // Facing direction
-	health   int     // Health bar
+	ID       string  // Unique player ID
+	X, Y     float64 // Position
+	Angle    float64 // Facing direction
+	Health   int     // Health bar
 	cooldown int     // Shooting cooldown
 	eliminated bool    // New: Marks player as eliminated
 	Image  *ebiten.Image // Store the player's tank sprite
@@ -71,16 +71,16 @@ type BulletMessage struct {
 
 // Bullet struct (tracks owner)
 type Bullet struct {
-	x, y     float64
+	X, Y     float64
 	vx, vy   float64
-	active   bool
-	ownerID  string // ID of the player who fired it
+	Active   bool
+	OwnerID  string // ID of the player who fired it
 }
 
 // Game struct (supports multiple players)
 type Game struct {
 	Players       map[string]*Player // Stores all players
-	bullets       []Bullet           // Stores all bullets
+	Bullets       []Bullet           // Stores all bullets
 	LocalPlayerID string             // ID of the local player
 	ActiveConnections map[string]net.Conn  // Stores active TCP connections to peers
 	SendUpdate func(interface{}) // Field for sending updates
@@ -120,22 +120,22 @@ func (g *Game) Update() error {
 
 	// Only send updates if movement occurred
 	if vx != 0 || vy != 0 {
-		player.angle = math.Atan2(vy, vx)
-		player.x += vx
-		player.y += vy
+		player.Angle = math.Atan2(vy, vx)
+		player.X += vx
+		player.Y += vy
 
 		// Prevent moving off-screen
-		if player.x < 0 {
-			player.x = 0
+		if player.X < 0 {
+			player.X = 0
 		}
-		if player.x > ScreenWidth-PlayerSize {
-			player.x = ScreenWidth - PlayerSize
+		if player.X > ScreenWidth-PlayerSize {
+			player.X = ScreenWidth - PlayerSize
 		}
-		if player.y < 0 {
-			player.y = 0
+		if player.Y < 0 {
+			player.Y = 0
 		}
-		if player.y > ScreenHeight-PlayerSize {
-			player.y = ScreenHeight - PlayerSize
+		if player.Y > ScreenHeight-PlayerSize {
+			player.Y = ScreenHeight - PlayerSize
 		}
 
 		// Send movement update to peers
@@ -147,33 +147,34 @@ func (g *Game) Update() error {
 		g.Players[g.LocalPlayerID].cooldown--
 	}
 	if ebiten.IsKeyPressed(ebiten.KeySpace) && g.Players[g.LocalPlayerID].cooldown == 0 {
-		g.shootBullet()
+		g.ShootBullet()
 		g.Players[g.LocalPlayerID].cooldown = ShotCooldown
 	}
 
 
 	// Bullet update logic
-	for i := range g.bullets {
-		if g.bullets[i].active {
-			g.bullets[i].x += g.bullets[i].vx
-			g.bullets[i].y += g.bullets[i].vy
+	for i := range g.Bullets {
+		if g.Bullets[i].Active {
+			g.Bullets[i].X += g.Bullets[i].vx
+			g.Bullets[i].Y += g.Bullets[i].vy
 
 			// Bullet out of bounds check
-			if g.bullets[i].x < 0 || g.bullets[i].x > ScreenWidth || g.bullets[i].y < 0 || g.bullets[i].y > ScreenHeight {
-				g.bullets[i].active = false
+			if g.Bullets[i].X < 0 || g.Bullets[i].X > ScreenWidth || g.Bullets[i].Y < 0 || g.Bullets[i].Y > ScreenHeight {
+				g.Bullets[i].Active = false
 				continue
 			}
 
 			// Bullet collision with other players
 			for pid, target := range g.Players {
-				if pid != g.bullets[i].ownerID && checkCollision(g.bullets[i], target, g) {
-					g.bullets[i].active = false
-					target.health -= DamageAmount // Apply damage
+				if pid != g.Bullets[i].OwnerID && CheckCollision(g.Bullets[i], target, g) {
+					g.Bullets[i].Active = false
+					target.Health -= DamageAmount // Apply damage
 					g.Players[pid] = target // Update player health
 
 					// Elimination check
-					if target.health <= 0 {
-						delete(g.Players, pid) // Remove eliminated player
+					if target.Health <= 0 {
+						g.RemovePlayerAfterDelay(pid)
+						// delete(g.Players, pid) // Remove eliminated player
 						fmt.Println("Player", pid, "eliminated!")
 					}
 				}
@@ -187,10 +188,10 @@ func (g *Game) Update() error {
 func (g *Game) sendMovementUpdate(player *Player) {
 	message := MovementMessage{
 		Type:  "move",
-		ID:    player.id,
-		X:     player.x,
-		Y:     player.y,
-		Angle: player.angle,
+		ID:    player.ID,
+		X:     player.X,
+		Y:     player.Y,
+		Angle: player.Angle,
 	}
 
 	// Call the injected function
@@ -204,31 +205,31 @@ func (g *Game) UpdatePlayerPosition(msg MovementMessage) {
     defer mutex.Unlock()
 
     if player, exists := g.Players[msg.ID]; exists {
-        player.x = msg.X
-        player.y = msg.Y
-        player.angle = msg.Angle
+        player.X = msg.X
+        player.Y = msg.Y
+        player.Angle = msg.Angle
     } else {
         // **Create new player if they don't exist**
         g.Players[msg.ID] = &Player{
-            id:     msg.ID,
-            x:      msg.X,
-            y:      msg.Y,
-            angle:  msg.Angle,
-            health: MaxHealth,
+            ID:     msg.ID,
+            X:      msg.X,
+            Y:      msg.Y,
+            Angle:  msg.Angle,
+            Health: MaxHealth,
         }
     }
 }
 
 // **Bullet Collision Check**
-func checkCollision(b Bullet, p *Player, g *Game) bool {
-	if b.x > p.x && b.x < p.x+PlayerSize && b.y > p.y && b.y < p.y+PlayerSize {
-		p.health -= DamageAmount
-		fmt.Println("Player", p.id, "hit! New health:", p.health)
+func CheckCollision(b Bullet, p *Player, g *Game) bool {
+	if b.X > p.X && b.X < p.X+PlayerSize && b.Y > p.Y && b.Y < p.Y+PlayerSize {
+		p.Health -= DamageAmount
+		fmt.Println("Player", p.ID, "hit! New health:", p.Health)
 
-		if p.health <= 0 && !p.eliminated {
-			fmt.Println("Player", p.id, "eliminated!")
+		if p.Health <= 0 && !p.eliminated {
+			fmt.Println("Player", p.ID, "eliminated!")
 			p.eliminated = true // Mark as eliminated
-			go g.RemovePlayerAfterDelay(p.id) // Remove after delay
+			go g.RemovePlayerAfterDelay(p.ID) // Remove after delay
 		}
 		return true
 	}
@@ -248,27 +249,27 @@ func (g *Game) RemovePlayerAfterDelay(playerID string) {
 }
 
 // Shoot a bullet and send an update to peers
-func (g *Game) shootBullet() {
-	vx := BulletSpeed * math.Cos(g.Players[g.LocalPlayerID].angle)
-	vy := BulletSpeed * math.Sin(g.Players[g.LocalPlayerID].angle)
+func (g *Game) ShootBullet() {
+	vx := BulletSpeed * math.Cos(g.Players[g.LocalPlayerID].Angle)
+	vy := BulletSpeed * math.Sin(g.Players[g.LocalPlayerID].Angle)
 	newBullet := Bullet{
-		x:       g.Players[g.LocalPlayerID].x + PlayerSize/2,
-		y:       g.Players[g.LocalPlayerID].y + PlayerSize/2,
+		X:       g.Players[g.LocalPlayerID].X + PlayerSize/2,
+		Y:       g.Players[g.LocalPlayerID].Y + PlayerSize/2,
 		vx:      vx, 
 		vy:      vy,
-		active:  true,
-		ownerID: g.LocalPlayerID, // Identify shooter
+		Active:  true,
+		OwnerID: g.LocalPlayerID, // Identify shooter
 	}
 
-	g.bullets = append(g.bullets, newBullet)
+	g.Bullets = append(g.Bullets, newBullet)
 
 	// Send bullet data to all peers
 	if g.SendUpdate != nil {
 		bulletUpdate := BulletMessage{
 			Type:    "bullet",
-			OwnerID: newBullet.ownerID,
-			X:       newBullet.x,
-			Y:       newBullet.y,
+			OwnerID: newBullet.OwnerID,
+			X:       newBullet.X,
+			Y:       newBullet.Y,
 			VX:      newBullet.vx,
 			VY:      newBullet.vy,
 		}
@@ -282,15 +283,15 @@ func (g *Game) AddBulletFromPeer(msg BulletMessage) {
 	defer mutex.Unlock()
 
 	newBullet := Bullet{
-		x:       msg.X,
-		y:       msg.Y,
+		X:       msg.X,
+		Y:       msg.Y,
 		vx:      msg.VX,
 		vy:      msg.VY,
-		active:  true,
-		ownerID: msg.OwnerID,
+		Active:  true,
+		OwnerID: msg.OwnerID,
 	}
 
-	g.bullets = append(g.bullets, newBullet)
+	g.Bullets = append(g.Bullets, newBullet)
 }
 
 // Draw renders everything
@@ -305,8 +306,8 @@ func (g *Game) Draw(screen *ebiten.Image) {
 		scale := 0.15 // Adjust this value as needed
 		op.GeoM.Scale(scale, scale) // Scale the sprite
         op.GeoM.Translate(-float64(player.Image.Bounds().Dx())*scale/2, -float64(player.Image.Bounds().Dy())*scale/2) // Center the rotation
-        op.GeoM.Rotate(player.angle) // Rotate the sprite
-        op.GeoM.Translate(player.x, player.y) // Position the sprite at the player's location
+        op.GeoM.Rotate(player.Angle) // Rotate the sprite
+        op.GeoM.Translate(player.X, player.Y) // Position the sprite at the player's location
 
         screen.DrawImage(player.Image, op) // Render the tank sprite
 
@@ -319,9 +320,9 @@ func (g *Game) Draw(screen *ebiten.Image) {
 	}
 
 	// Draw bullets
-	for _, b := range g.bullets {
-		if b.active {
-			ebitenutil.DrawRect(screen, b.x - 12, b.y - 12, BulletSize, BulletSize, color.RGBA{255, 255, 0, 255})
+	for _, b := range g.Bullets {
+		if b.Active {
+			ebitenutil.DrawRect(screen, b.X - 12, b.Y - 12, BulletSize, BulletSize, color.RGBA{255, 255, 0, 255})
 		}
 	}
 }
@@ -332,12 +333,12 @@ func (g *Game) drawHealthBar(screen *ebiten.Image, player *Player) {
 	tankHeight := float64(tankImage.Bounds().Dy()) * scale
 
     // Calculate health percentage
-    healthPercentage := float64(player.health) / float64(MaxHealth)
+    healthPercentage := float64(player.Health) / float64(MaxHealth)
     barCurrentWidth := HealthBarWidth * healthPercentage
 
     // Calculate the position of the health bar based on the player's rotation
-    barX := player.x - barCurrentWidth/2
-    barY := player.y - tankHeight/2 - 10 // Position above player (adjust as needed)
+    barX := player.X - barCurrentWidth/2
+    barY := player.Y - tankHeight/2 - 10 // Position above player (adjust as needed)
 
 	// Change health bar color based on health
 	var healthColor color.Color
@@ -371,7 +372,7 @@ func getRandomSpawn(existingPlayers map[string]*Player) (float64, float64) {
 		// Ensure new spawn is not too close to an existing player
 		overlapping := false
 		for _, p := range existingPlayers {
-			dist := (p.x-x)*(p.x-x) + (p.y-y)*(p.y-y)
+			dist := (p.X-x)*(p.X-x) + (p.Y-y)*(p.Y-y)
 			if dist < (PlayerSize * PlayerSize) {
 				overlapping = true
 				break
@@ -393,10 +394,10 @@ func (g *Game) MainGame(game *Game) {
 
 	// Create the local player with a unique ID and random spawn position
 	game.Players[game.LocalPlayerID] = &Player{
-		id:     game.LocalPlayerID,
-		x:      spawnX,
-		y:      spawnY,
-		health: MaxHealth,
+		ID:     game.LocalPlayerID,
+		X:      spawnX,
+		Y:      spawnY,
+		Health: MaxHealth,
 	}
 
 	// Set window properties
