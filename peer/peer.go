@@ -50,7 +50,7 @@ func RegisterWithDiscovery(addr string) {
 }
 
 // **Send deregistration request when exiting**
-func deregisterFromDiscovery() {
+func DeregisterFromDiscovery() {
 	conn, err := net.Dial("tcp", DiscoveryServer)
 	if err != nil {
 		fmt.Println("Error connecting to discovery server:", err)
@@ -73,7 +73,7 @@ func HandleExit() {
 		fmt.Println("Shutting down...")
 
 		// Notify the discovery server
-		deregisterFromDiscovery()
+		DeregisterFromDiscovery()
 
 		// Close all active connections
 		Mutex.Lock()
